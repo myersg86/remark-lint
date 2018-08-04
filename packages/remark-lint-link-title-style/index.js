@@ -22,18 +22,15 @@
  *
  * @example {"name": "valid.md", "setting": "\""}
  *
+ *   [Example](http://example.com#without-title)
  *   [Example](http://example.com "Example Domain")
- *   [Example](http://example.com "Example Domain")
+ *   ![Example](http://example.com "Example Domain")
  *
- * @example {"name": "valid.md", "setting": "'"}
+ *   [Example]: http://example.com "Example Domain"
  *
- *   ![Example](http://example.com/image.png 'Example Domain')
- *   ![Example](http://example.com/image.png 'Example Domain')
+ *   You can use parens in URLs if they’re not a title (see GH-166):
  *
- * @example {"name": "valid.md", "setting": "()"}
- *
- *   [Example](http://example.com (Example Domain) )
- *   [Example](http://example.com (Example Domain) )
+ *   [Example](#Heading-(optional))
  *
  * @example {"name": "invalid.md", "label": "input", "setting": "\""}
  *
@@ -41,103 +38,153 @@
  *
  * @example {"name": "invalid.md", "label": "output", "setting": "\""}
  *
- *   1:47: Titles should use `"` as a quote
+ *   1:31-1:47: Titles should use `"` as a quote
  *
- * @example {"name": "invalid.md", "label": "input"}
+ * @example {"name": "valid.md", "setting": "'"}
  *
- *   [Example](http://example.com "Example Domain")
  *   [Example](http://example.com#without-title)
  *   [Example](http://example.com 'Example Domain')
+ *   ![Example](http://example.com 'Example Domain')
  *
- * @example {"name": "invalid.md", "label": "output"}
+ *   [Example]: http://example.com 'Example Domain'
  *
- *   3:46: Titles should use `"` as a quote
+ * @example {"name": "invalid.md", "label": "input", "setting": "'"}
+ *
+ *   [Example]: http://example.com "Example Domain"
+ *
+ * @example {"name": "invalid.md", "label": "output", "setting": "'"}
+ *
+ *   1:31-1:47: Titles should use `'` as a quote
+ *
+ * @example {"name": "valid.md", "setting": "()"}
+ *
+ *   [Example](http://example.com#without-title)
+ *   [Example](http://example.com (Example Domain))
+ *   ![Example](http://example.com (Example Domain))
+ *
+ *   [Example]: http://example.com (Example Domain)
  *
  * @example {"name": "invalid.md", "label": "input", "setting": "()"}
  *
- *   [Example](http://example.com (Example Domain))
  *   [Example](http://example.com 'Example Domain')
  *
  * @example {"name": "invalid.md", "label": "output", "setting": "()"}
  *
- *   2:46: Titles should use `()` as a quote
+ *   1:30-1:46: Titles should use `()` as a quote
+ *
+ * @example {"name": "invalid.md", "label": "input"}
+ *
+ *   [Example](http://example.com "Example Domain")
+ *   [Example](http://example.com 'Example Domain')
+ *
+ * @example {"name": "invalid.md", "label": "output"}
+ *
+ *   2:30-2:46: Titles should use `"` as a quote
  *
  * @example {"name": "invalid.md", "setting": ".", "label": "output", "config": {"positionless": true}}
  *
  *   1:1: Invalid link title style marker `.`: use either `'consistent'`, `'"'`, `'\''`, or `'()'`
  */
 
-'use strict';
+'use strict'
 
-var rule = require('unified-lint-rule');
-var vfileLocation = require('vfile-location');
-var visit = require('unist-util-visit');
-var position = require('unist-util-position');
-var generated = require('unist-util-generated');
+var rule = require('unified-lint-rule')
+var vfileLocation = require('vfile-location')
+var visit = require('unist-util-visit')
+var position = require('unist-util-position')
+var generated = require('unist-util-generated')
 
-module.exports = rule('remark-lint:link-title-style', linkTitleStyle);
+module.exports = rule('remark-lint:link-title-style', linkTitleStyle)
 
-var end = position.end;
+var own = {}.hasOwnProperty
 
-var MARKERS = {
-  '"': true,
-  '\'': true,
-  ')': true,
-  null: true
-};
+var start = position.start
+var end = position.end
 
-function linkTitleStyle(ast, file, preferred) {
-  var contents = file.toString();
-  var location = vfileLocation(file);
+var markers = {
+  '"': '"',
+  "'": "'",
+  ')': '('
+}
 
-  preferred = typeof preferred !== 'string' || preferred === 'consistent' ? null : preferred;
+function linkTitleStyle(tree, file, pref) {
+  var contents = String(file)
+  var location = vfileLocation(file)
 
-  if (preferred === '()' || preferred === '(') {
-    preferred = ')';
+  pref = typeof pref === 'string' && pref !== 'consistent' ? pref : null
+  pref = pref === '()' || pref === '(' ? ')' : pref
+
+  if (pref && !own.call(markers, pref)) {
+    file.fail(
+      'Invalid link title style marker `' +
+        pref +
+        "`: use either `'consistent'`, `'\"'`, `'\\''`, or `'()'`"
+    )
   }
 
-  if (MARKERS[preferred] !== true) {
-    file.fail('Invalid link title style marker `' + preferred + '`: use either `\'consistent\'`, `\'"\'`, `\'\\\'\'`, or `\'()\'`');
-  }
-
-  visit(ast, 'link', validate);
-  visit(ast, 'image', validate);
-  visit(ast, 'definition', validate);
+  visit(tree, ['link', 'image', 'definition'], validate)
 
   function validate(node) {
-    var last = end(node).offset - 1;
-    var character;
-    var pos;
+    var tail
+    var begin
+    var last
+    var first
+    var final
+    var initial
+    var reason
 
     if (generated(node)) {
-      return;
+      return
     }
+
+    last = end(node).offset - 1
+    tail = node.children ? node.children[node.children.length - 1] : null
+    begin = tail ? end(tail) : start(node)
 
     if (node.type !== 'definition') {
-      last--;
+      last--
     }
 
+    /* Skip back to before whitespace */
     while (last) {
-      character = contents.charAt(last);
+      final = contents.charAt(last)
 
       /* istanbul ignore if - remark before 8.0.0 */
-      if (/\s/.test(character)) {
-        last--;
+      if (/\s/.test(final)) {
+        last--
       } else {
-        break;
+        break
       }
     }
 
-    /* Not a title. */
-    if (!(character in MARKERS)) {
-      return;
+    /* Exit if the final marker is not a known marker. */
+    if (!(final in markers)) {
+      return
     }
 
-    if (!preferred) {
-      preferred = character;
-    } else if (preferred !== character) {
-      pos = location.toPosition(last + 1);
-      file.message('Titles should use `' + (preferred === ')' ? '()' : preferred) + '` as a quote', pos);
+    initial = markers[final]
+
+    /* Find the starting delimiter */
+    first = contents.lastIndexOf(initial, last - 1)
+
+    /* Exit if there’s no starting delimiter, the starting delimiter
+     * is before the start of the node, or if it’s not preceded by whitespace. */
+    if (first <= begin || !/\s/.test(contents.charAt(first - 1))) {
+      return
+    }
+
+    if (pref) {
+      if (pref !== final) {
+        reason =
+          'Titles should use `' + (pref === ')' ? '()' : pref) + '` as a quote'
+
+        file.message(reason, {
+          start: location.toPosition(first),
+          end: location.toPosition(last + 1)
+        })
+      }
+    } else {
+      pref = final
     }
   }
 }

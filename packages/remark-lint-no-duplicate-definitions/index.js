@@ -21,39 +21,42 @@
  *   2:1-2:11: Do not use definitions with the same identifier (1:1)
  */
 
-'use strict';
+'use strict'
 
-var rule = require('unified-lint-rule');
-var position = require('unist-util-position');
-var generated = require('unist-util-generated');
-var visit = require('unist-util-visit');
+var rule = require('unified-lint-rule')
+var position = require('unist-util-position')
+var generated = require('unist-util-generated')
+var stringify = require('unist-util-stringify-position')
+var visit = require('unist-util-visit')
 
-module.exports = rule('remark-lint:no-duplicate-definitions', noDuplicateDefinitions);
+module.exports = rule(
+  'remark-lint:no-duplicate-definitions',
+  noDuplicateDefinitions
+)
 
-function noDuplicateDefinitions(ast, file) {
-  var map = {};
+var reason = 'Do not use definitions with the same identifier'
 
-  visit(ast, 'definition', validate);
-  visit(ast, 'footnoteDefinition', validate);
+function noDuplicateDefinitions(tree, file) {
+  var map = {}
+
+  visit(tree, ['definition', 'footnoteDefinition'], validate)
 
   function validate(node) {
-    var duplicate = map[node.identifier];
-    var pos;
+    var identifier
+    var duplicate
 
-    if (generated(node)) {
-      return;
+    if (!generated(node)) {
+      identifier = node.identifier
+      duplicate = map[identifier]
+
+      if (duplicate && duplicate.type) {
+        file.message(
+          reason + ' (' + stringify(position.start(duplicate)) + ')',
+          node
+        )
+      }
+
+      map[identifier] = node
     }
-
-    if (duplicate && duplicate.type) {
-      pos = position.start(duplicate);
-
-      file.message(
-        'Do not use definitions with the same identifier (' +
-        pos.line + ':' + pos.column + ')',
-        node
-      );
-    }
-
-    map[node.identifier] = node;
   }
 }

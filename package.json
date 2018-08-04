@@ -13,6 +13,7 @@
     "Michael Mior <michael.mior@gmail.com>",
     "Nikita Sobolev <mail@sobolevn.me>",
     "Patrick Gilday <pcgilday@gmail.com>",
+    "Philipp Burckhardt <pburckhardt@outlook.com>",
     "Piotr Kuczynski <piotr.kuczynski@gmail.com>",
     "Richard Littauer <richard.littauer@gmail.com>",
     "Tony Brix <tbrix13@gmail.com>",
@@ -29,7 +30,7 @@
     "Joaquín Serna <BubuAnabelas@users.noreply.github.com>"
   ],
   "devDependencies": {
-    "browserify": "^15.0.0",
+    "browserify": "^16.0.0",
     "chalk": "^2.0.0",
     "dox": "^0.9.0",
     "esmangle": "^1.0.0",
@@ -37,33 +38,34 @@
     "mdast-zone": "^3.0.0",
     "nyc": "^11.0.0",
     "parse-author": "^2.0.0",
-    "remark": "^8.0.0",
-    "remark-cli": "^4.0.0",
+    "prettier": "^1.12.1",
+    "remark": "^9.0.0",
+    "remark-cli": "^5.0.0",
     "remark-comment-config": "^5.0.0",
     "remark-github": "^7.0.0",
     "remark-toc": "^5.0.0",
     "remark-validate-links": "^7.0.0",
     "strip-indent": "^2.0.0",
     "tape": "^4.6.0",
-    "to-vfile": "^2.0.0",
+    "to-vfile": "^4.0.0",
     "trim": "0.0.1",
     "unist-builder": "^1.0.2",
     "unist-util-remove-position": "^1.1.0",
-    "vfile-reporter": "^4.0.0",
-    "xo": "^0.18.0"
+    "vfile-reporter": "^5.0.0",
+    "xo": "^0.21.0"
   },
   "scripts": {
     "prepublish": "lerna bootstrap",
-    "build-presets": "node script/build-presets",
-    "build-rules": "node script/build-rules",
-    "build-md": "remark . -qfo",
-    "build-bundle": "browserify packages/remark-lint/index.js --bare -s remarkLint > remark-lint.js",
-    "build-mangle": "esmangle remark-lint.js > remark-lint.min.js",
-    "build": "npm run build-presets && npm run build-rules && npm run build-md && npm run build-bundle && npm run build-mangle",
-    "lint": "xo",
+    "format": "remark . -qfo && prettier --write '**/*.js' && xo --fix",
+    "generate:presets": "node script/build-presets",
+    "generate:rules": "node script/build-rules",
+    "generate": "npm run generate:presets && npm run generate:rules",
+    "build:bundle": "browserify packages/remark-lint/index.js --bare -s remarkLint > remark-lint.js",
+    "build:mangle": "esmangle remark-lint.js > remark-lint.min.js",
+    "build": "npm run build:bundle && npm run build:mangle",
     "test-api": "node test",
     "test-coverage": "nyc --reporter lcov tape test.js",
-    "test": "npm run build && npm run lint && npm run test-coverage"
+    "test": "npm run generate && npm run format && npm run build && npm run test-coverage"
   },
   "nyc": {
     "check-coverage": true,
@@ -71,8 +73,16 @@
     "functions": 100,
     "branches": 100
   },
+  "prettier": {
+    "tabWidth": 2,
+    "useTabs": false,
+    "singleQuote": true,
+    "bracketSpacing": false,
+    "semi": false,
+    "trailingComma": "none"
+  },
   "xo": {
-    "space": true,
+    "prettier": true,
     "esnext": false,
     "rules": {
       "guard-for-in": "off",

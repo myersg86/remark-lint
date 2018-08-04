@@ -8,14 +8,11 @@
  *
  *   Options: `number`, default: `80`.
  *
- *   Ignores nodes which cannot be wrapped, such as headings, tables,
+ *   Ignores nodes that cannot be wrapped, such as headings, tables,
  *   code, and definitions.
  *
- *   Ignores nodes which cannot be wrapped, such as headings, tables,
- *   code, and definitions.
- *
- *   URLs in images and links are okay if they occur at or after the wrap,
- *   except when there’s white-space after them.
+ *   Ignores images, links, and inline code if they start before the wrap, end
+ *   after the wrap, and there’s no white-space after them.
  *
  * @example {"name": "valid.md", "config": {"positionless": true}}
  *
@@ -25,6 +22,8 @@
  *   This is also fine: <http://this-long-url-with-a-long-domain.co.uk/a-long-path?query=variables>
  *
  *   <http://this-link-is-fine.com>
+ *
+ *   `alphaBravoCharlieDeltaEchoFoxtrotGolfHotelIndiaJuliettKiloLimaMikeNovemberOscarPapaQuebec.romeo()`
  *
  *   [foo](http://this-long-url-with-a-long-domain-is-valid.co.uk/a-long-path?query=variables)
  *
@@ -55,11 +54,17 @@
  *
  *   <http://this-long-url-with-a-long-domain-is-invalid.co.uk/a-long-path?query=variables> and such.
  *
+ *   And this one is also very wrong: because the code starts aaaaaaafter the column: `alpha.bravo()`
+ *
+ *   `alphaBravoCharlieDeltaEchoFoxtrotGolfHotelIndiaJuliettKiloLimaMikeNovemberOscar.papa()` and such.
+ *
  * @example {"name": "invalid.md", "setting": 80, "label": "output", "config": {"positionless": true}}
  *
  *   4:86: Line must be at most 80 characters
  *   6:99: Line must be at most 80 characters
  *   8:97: Line must be at most 80 characters
+ *   10:97: Line must be at most 80 characters
+ *   12:99: Line must be at most 80 characters
  *
  * @example {"name": "valid-mixed-line-endings.md", "setting": 10, "config": {"positionless": true}}
  *
@@ -83,86 +88,60 @@
  *   4:12: Line must be at most 10 characters
  */
 
-'use strict';
+'use strict'
 
-var rule = require('unified-lint-rule');
-var visit = require('unist-util-visit');
-var position = require('unist-util-position');
-var generated = require('unist-util-generated');
+var rule = require('unified-lint-rule')
+var visit = require('unist-util-visit')
+var position = require('unist-util-position')
+var generated = require('unist-util-generated')
 
-module.exports = rule('remark-lint:maximum-line-length', maximumLineLength);
+module.exports = rule('remark-lint:maximum-line-length', maximumLineLength)
 
-var start = position.start;
-var end = position.end;
+var start = position.start
+var end = position.end
 
-function maximumLineLength(ast, file, preferred) {
-  var style = preferred && preferred !== true ? preferred : 80;
-  var content = file.toString();
-  var matrix = content.split(/\r?\n/);
-  var index = -1;
-  var length = matrix.length;
-  var lineLength;
+function maximumLineLength(tree, file, pref) {
+  var style = typeof pref === 'number' && !isNaN(pref) ? pref : 80
+  var content = String(file)
+  var lines = content.split(/\r?\n/)
+  var length = lines.length
+  var index = -1
+  var lineLength
 
-  /* Next, white list nodes which cannot be wrapped. */
-  visit(ast, ignore);
+  visit(tree, ['heading', 'table', 'code', 'definition'], ignore)
+  visit(tree, ['link', 'image', 'inlineCode'], inline)
 
-  visit(ast, 'link', validateLink);
-  visit(ast, 'image', validateLink);
-
-  /* Iterate over every line, and warn for
-   * violating lines. */
+  /* Iterate over every line, and warn for violating lines. */
   while (++index < length) {
-    lineLength = matrix[index].length;
+    lineLength = lines[index].length
 
     if (lineLength > style) {
       file.message('Line must be at most ' + style + ' characters', {
         line: index + 1,
         column: lineLength + 1
-      });
+      })
     }
   }
 
-  function ignore(node) {
-    var applicable = isIgnored(node);
-    var initial = applicable && start(node).line;
-    var final = applicable && end(node).line;
+  /* Finally, whitelist some inline spans, but only if they occur at or after
+   * the wrap.  However, when they do, and there’s white-space after it, they
+   * are not whitelisted. */
+  function inline(node, pos, parent) {
+    var next = parent.children[pos + 1]
+    var initial
+    var final
 
-    if (!applicable || generated(node)) {
-      return;
-    }
-
-    whitelist(initial - 1, final);
-  }
-
-  /* Whitelist from `initial` to `final`, zero-based. */
-  function whitelist(initial, final) {
-    initial--;
-
-    while (++initial < final) {
-      matrix[initial] = '';
-    }
-  }
-
-  /* Finally, whitelist URLs, but only if they occur at
-   * or after the wrap.  However, when they do, and
-   * there’s white-space after it, they are not
-   * whitelisted. */
-  function validateLink(node, pos, parent) {
-    var next = parent.children[pos + 1];
-    var initial = start(node);
-    var final = end(node);
-
-    /* Nothing to whitelist when generated. */
-    /* istanbul ignore if - Hard to test, as we only run this
-     * case on `position: true` */
+    /* istanbul ignore if - Nothing to whitelist when generated. */
     if (generated(node)) {
-      return;
+      return
     }
 
-    /* No whitelisting when starting after the border,
-     * or ending before it. */
+    initial = start(node)
+    final = end(node)
+
+    /* No whitelisting when starting after the border, or ending before it. */
     if (initial.column > style || final.column < style) {
-      return;
+      return
     }
 
     /* No whitelisting when there’s white-space after
@@ -172,18 +151,23 @@ function maximumLineLength(ast, file, preferred) {
       start(next).line === initial.line &&
       (!next.value || /^(.+?[ \t].+?)/.test(next.value))
     ) {
-      return;
+      return
     }
 
-    whitelist(initial.line - 1, final.line);
+    whitelist(initial.line - 1, final.line)
   }
-}
 
-/* Check if `node` is applicable, as in, if it should be
- * ignored. */
-function isIgnored(node) {
-  return node.type === 'heading' ||
-    node.type === 'table' ||
-    node.type === 'code' ||
-    node.type === 'definition';
+  function ignore(node) {
+    /* istanbul ignore else - Hard to test, as we only run this case on `position: true` */
+    if (!generated(node)) {
+      whitelist(start(node).line - 1, end(node).line)
+    }
+  }
+
+  /* Whitelist from `initial` to `final`, zero-based. */
+  function whitelist(initial, final) {
+    while (initial < final) {
+      lines[initial++] = ''
+    }
+  }
 }
